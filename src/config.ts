@@ -33,7 +33,6 @@ export const GROUPS_DIR =
   process.env.GROUPS_DIR || path.resolve(PROJECT_ROOT, 'groups');
 export const DATA_DIR =
   process.env.DATA_DIR || path.resolve(PROJECT_ROOT, 'data');
-export const MAIN_GROUP_FOLDER = 'main';
 
 export const CONTAINER_TIMEOUT = parseInt(
   process.env.CONTAINER_TIMEOUT || '1800000',

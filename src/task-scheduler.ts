@@ -1,13 +1,12 @@
-import { ChildProcess } from 'child_process';
 import { CronExpressionParser } from 'cron-parser';
 import fs from 'fs';
 
 import { ASSISTANT_NAME, SCHEDULER_POLL_INTERVAL, TIMEZONE } from './config.js';
 import {
   ContainerOutput,
-  runContainerAgent,
+  runK8sJob,
   writeTasksSnapshot,
-} from './container-runner.js';
+} from './k8s-runner.js';
 import {
   getAllTasks,
   getDueTasks,
@@ -25,12 +24,7 @@ export interface SchedulerDependencies {
   registeredGroups: () => Record<string, RegisteredGroup>;
   getSessions: () => Record<string, string>;
   queue: GroupQueue;
-  onProcess: (
-    groupJid: string,
-    proc: ChildProcess,
-    containerName: string,
-    groupFolder: string,
-  ) => void;
+  onProcess: (groupJid: string, jobName: string, groupFolder: string) => void;
   sendMessage: (jid: string, text: string) => Promise<void>;
 }
 
@@ -128,7 +122,7 @@ async function runTask(
   };
 
   try {
-    const output = await runContainerAgent(
+    const output = await runK8sJob(
       group,
       {
         prompt: task.prompt,
@@ -139,8 +133,7 @@ async function runTask(
         isScheduledTask: true,
         assistantName: ASSISTANT_NAME,
       },
-      (proc, containerName) =>
-        deps.onProcess(task.chat_jid, proc, containerName, task.group_folder),
+      (jobName) => deps.onProcess(task.chat_jid, jobName, task.group_folder),
       async (streamedOutput: ContainerOutput) => {
         if (streamedOutput.result) {
           result = streamedOutput.result;

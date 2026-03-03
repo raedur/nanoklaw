@@ -14,14 +14,12 @@ import {
 } from './channels/registry.js';
 import {
   ContainerOutput,
-  runContainerAgent,
+  runK8sJob,
+  syncProjectSourceToPvc,
   writeGroupsSnapshot,
   writeTasksSnapshot,
-} from './container-runner.js';
-import {
-  cleanupOrphans,
-  ensureContainerRuntimeRunning,
-} from './container-runtime.js';
+} from './k8s-runner.js';
+import { cleanupOrphanJobs, ensureK8sRunning } from './k8s-runtime.js';
 import {
   getAllChats,
   getAllRegisteredGroups,
@@ -107,7 +105,7 @@ function registerGroup(jid: string, group: RegisteredGroup): void {
  * Get available groups list for the agent.
  * Returns groups ordered by most recent activity.
  */
-export function getAvailableGroups(): import('./container-runner.js').AvailableGroup[] {
+export function getAvailableGroups(): import('./k8s-runner.js').AvailableGroup[] {
   const chats = getAllChats();
   const registeredJids = new Set(Object.keys(registeredGroups));
 
@@ -127,6 +125,9 @@ export function _setRegisteredGroups(
 ): void {
   registeredGroups = groups;
 }
+
+// Re-export AvailableGroup for consumers (ipc.ts)
+export type { AvailableGroup } from './k8s-runner.js';
 
 /**
  * Process all pending messages for a group.
@@ -292,7 +293,7 @@ async function runAgent(
     : undefined;
 
   try {
-    const output = await runContainerAgent(
+    const output = await runK8sJob(
       group,
       {
         prompt,
@@ -302,8 +303,7 @@ async function runAgent(
         isMain,
         assistantName: ASSISTANT_NAME,
       },
-      (proc, containerName) =>
-        queue.registerProcess(chatJid, proc, containerName, group.folder),
+      (jobName) => queue.registerJob(chatJid, jobName, group.folder),
       wrappedOnOutput,
     );
 
@@ -442,13 +442,14 @@ function recoverPendingMessages(): void {
   }
 }
 
-function ensureContainerSystemRunning(): void {
-  ensureContainerRuntimeRunning();
-  cleanupOrphans();
+async function ensureContainerSystemRunning(): Promise<void> {
+  await ensureK8sRunning();
+  await cleanupOrphanJobs();
+  syncProjectSourceToPvc();
 }
 
 async function main(): Promise<void> {
-  ensureContainerSystemRunning();
+  await ensureContainerSystemRunning();
   initDatabase();
   logger.info('Database initialized');
   loadState();
@@ -502,8 +503,8 @@ async function main(): Promise<void> {
     registeredGroups: () => registeredGroups,
     getSessions: () => sessions,
     queue,
-    onProcess: (groupJid, proc, containerName, groupFolder) =>
-      queue.registerProcess(groupJid, proc, containerName, groupFolder),
+    onProcess: (groupJid, jobName, groupFolder) =>
+      queue.registerJob(groupJid, jobName, groupFolder),
     sendMessage: async (jid, rawText) => {
       const channel = findChannel(channels, jid);
       if (!channel) {
@@ -522,11 +523,11 @@ async function main(): Promise<void> {
     },
     registeredGroups: () => registeredGroups,
     registerGroup,
-    syncGroups: async (force: boolean) => {
+    syncGroupMetadata: async (force: boolean) => {
       await Promise.all(
         channels
-          .filter((ch) => ch.syncGroups)
-          .map((ch) => ch.syncGroups!(force)),
+          .filter((ch) => 'syncGroupMetadata' in ch)
+          .map((ch) => (ch as any).syncGroupMetadata(force)),
       );
     },
     getAvailableGroups,

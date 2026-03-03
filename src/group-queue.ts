@@ -135,6 +135,12 @@ export class GroupQueue {
     if (groupFolder) state.groupFolder = groupFolder;
   }
 
+  registerJob(groupJid: string, jobName: string, groupFolder?: string): void {
+    const state = this.getGroup(groupJid);
+    state.containerName = jobName;
+    if (groupFolder) state.groupFolder = groupFolder;
+  }
+
   /**
    * Mark the container as idle-waiting (finished work, waiting for IPC input).
    * If tasks are pending, preempt the idle container immediately.

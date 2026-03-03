@@ -20,10 +20,7 @@ import {
   writeGroupsSnapshot,
   writeTasksSnapshot,
 } from './k8s-runner.js';
-import {
-  cleanupOrphanJobs,
-  ensureK8sRunning,
-} from './k8s-runtime.js';
+import { cleanupOrphanJobs, ensureK8sRunning } from './k8s-runtime.js';
 import {
   getAllChats,
   getAllRegisteredGroups,

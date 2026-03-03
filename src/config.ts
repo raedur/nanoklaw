@@ -43,8 +43,10 @@ export const CONTAINER_TIMEOUT = parseInt(
 // Kubernetes configuration
 export const K8S_NAMESPACE = process.env.K8S_NAMESPACE || 'default';
 export const K8S_PVC_NAME = process.env.K8S_PVC_NAME || 'nanoclaw-data';
-export const K8S_SECRET_NAME = process.env.K8S_SECRET_NAME || 'nanoclaw-secrets';
-export const K8S_SERVICE_ACCOUNT = process.env.K8S_SERVICE_ACCOUNT || 'nanoclaw';
+export const K8S_SECRET_NAME =
+  process.env.K8S_SECRET_NAME || 'nanoclaw-secrets';
+export const K8S_SERVICE_ACCOUNT =
+  process.env.K8S_SERVICE_ACCOUNT || 'nanoclaw';
 export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
   process.env.CONTAINER_MAX_OUTPUT_SIZE || '10485760',
   10,

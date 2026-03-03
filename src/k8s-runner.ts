@@ -139,7 +139,12 @@ function ensureGroupSessionDir(group: RegisteredGroup): string {
 
 function ensureGroupAgentRunnerSrc(group: RegisteredGroup): string {
   const projectRoot = process.cwd();
-  const agentRunnerSrc = path.join(projectRoot, 'container', 'agent-runner', 'src');
+  const agentRunnerSrc = path.join(
+    projectRoot,
+    'container',
+    'agent-runner',
+    'src',
+  );
   const groupAgentRunnerDir = path.join(
     DATA_DIR,
     'sessions',
@@ -493,7 +498,10 @@ export async function runK8sJob(
     if (onOutput) {
       const abortController = new AbortController();
       const hardTimeout = setTimeout(() => {
-        logger.error({ group: group.name, jobName }, 'Job hard timeout, aborting poll');
+        logger.error(
+          { group: group.name, jobName },
+          'Job hard timeout, aborting poll',
+        );
         abortController.abort();
       }, timeoutMs);
 
@@ -515,10 +523,7 @@ export async function runK8sJob(
       const duration = Date.now() - startTime;
 
       if (abortController.signal.aborted) {
-        logger.error(
-          { group: group.name, jobName, duration },
-          'Job timed out',
-        );
+        logger.error({ group: group.name, jobName, duration }, 'Job timed out');
         if (hadStreamingOutput) {
           return { status: 'success', result: null, newSessionId };
         }
@@ -538,10 +543,7 @@ export async function runK8sJob(
 
     // Non-streaming: wait for DONE.json and read the last output file
     const abortController = new AbortController();
-    const hardTimeout = setTimeout(
-      () => abortController.abort(),
-      timeoutMs,
-    );
+    const hardTimeout = setTimeout(() => abortController.abort(), timeoutMs);
     let lastOutput: ContainerOutput | null = null;
     await pollOutputDir(
       outputDir,

@@ -22,9 +22,6 @@ groups/global/*
 *.keys.json
 .env
 
-# Temp files
-.tmp-*
-
 # OS
 .DS_Store
 

@@ -1,17 +1,16 @@
 /**
  * NanoClaw Agent Runner
- * Runs inside a container, receives config via stdin, outputs result to stdout
+ * Runs inside a K8s Job pod, reads config from file, writes results to files
  *
  * Input protocol:
- *   Stdin: Full ContainerInput JSON (read until EOF, like before)
+ *   /workspace/request/input.json: Full ContainerInput JSON
  *   IPC:   Follow-up messages written as JSON files to /workspace/ipc/input/
  *          Files: {type:"message", text:"..."}.json — polled and consumed
  *          Sentinel: /workspace/ipc/input/_close — signals session end
  *
- * Stdout protocol:
- *   Each result is wrapped in OUTPUT_START_MARKER / OUTPUT_END_MARKER pairs.
- *   Multiple results may be emitted (one per agent teams result).
- *   Final marker after loop ends signals completion.
+ * Output protocol:
+ *   /workspace/request/output/{seq:04d}.json: Each ContainerOutput result
+ *   /workspace/request/output/DONE.json: Final sentinel (written after loop)
  */
 
 import fs from 'fs';
@@ -55,9 +54,13 @@ interface SDKUserMessage {
   session_id: string;
 }
 
+const INPUT_FILE = '/workspace/request/input.json';
+const OUTPUT_DIR = '/workspace/request/output';
 const IPC_INPUT_DIR = '/workspace/ipc/input';
 const IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
 const IPC_POLL_MS = 500;
+
+let outputSeq = 0;
 
 /**
  * Push-based async iterable for streaming user messages to the SDK.
@@ -95,23 +98,21 @@ class MessageStream {
   }
 }
 
-async function readStdin(): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let data = '';
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', chunk => { data += chunk; });
-    process.stdin.on('end', () => resolve(data));
-    process.stdin.on('error', reject);
-  });
+function readInputFile(): ContainerInput {
+  const data = fs.readFileSync(INPUT_FILE, 'utf-8');
+  return JSON.parse(data);
 }
 
-const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
-const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
-
 function writeOutput(output: ContainerOutput): void {
-  console.log(OUTPUT_START_MARKER);
-  console.log(JSON.stringify(output));
-  console.log(OUTPUT_END_MARKER);
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  const seq = String(outputSeq++).padStart(4, '0');
+  const filePath = path.join(OUTPUT_DIR, `${seq}.json`);
+  fs.writeFileSync(filePath, JSON.stringify(output));
+}
+
+function writeDone(status: 'success' | 'error'): void {
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  fs.writeFileSync(path.join(OUTPUT_DIR, 'DONE.json'), JSON.stringify({ status }));
 }
 
 function log(message: string): void {
@@ -494,10 +495,7 @@ async function main(): Promise<void> {
   let containerInput: ContainerInput;
 
   try {
-    const stdinData = await readStdin();
-    containerInput = JSON.parse(stdinData);
-    // Delete the temp file the entrypoint wrote — it contains secrets
-    try { fs.unlinkSync('/tmp/input.json'); } catch { /* may not exist */ }
+    containerInput = readInputFile();
     log(`Received input for group: ${containerInput.groupFolder}`);
   } catch (err) {
     writeOutput({
@@ -505,15 +503,13 @@ async function main(): Promise<void> {
       result: null,
       error: `Failed to parse input: ${err instanceof Error ? err.message : String(err)}`
     });
+    writeDone('error');
     process.exit(1);
   }
 
-  // Build SDK env: merge secrets into process.env for the SDK only.
-  // Secrets never touch process.env itself, so Bash subprocesses can't see them.
+  // Secrets come from K8s Secret via envFrom — they're already in process.env.
+  // Build SDK env: keep process.env for the SDK (secrets included for API auth).
   const sdkEnv: Record<string, string | undefined> = { ...process.env };
-  for (const [key, value] of Object.entries(containerInput.secrets || {})) {
-    sdkEnv[key] = value;
-  }
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const mcpServerPath = path.join(__dirname, 'ipc-mcp-stdio.js');
@@ -581,8 +577,11 @@ async function main(): Promise<void> {
       newSessionId: sessionId,
       error: errorMessage
     });
+    writeDone('error');
     process.exit(1);
   }
+
+  writeDone('success');
 }
 
 main();

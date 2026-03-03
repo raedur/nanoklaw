@@ -1,9 +1,7 @@
 import { Client, Events, GatewayIntentBits, Message, TextChannel } from 'discord.js';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
-import { readEnvFile } from '../env.js';
 import { logger } from '../logger.js';
-import { registerChannel, ChannelOpts } from './registry.js';
 import {
   Channel,
   OnChatMetadata,
@@ -124,8 +122,7 @@ export class DiscordChannel implements Channel {
       }
 
       // Store chat metadata for discovery
-      const isGroup = message.guild !== null;
-      this.opts.onChatMetadata(chatJid, timestamp, chatName, 'discord', isGroup);
+      this.opts.onChatMetadata(chatJid, timestamp, chatName);
 
       // Only deliver full message for registered groups
       const group = this.opts.registeredGroups()[chatJid];
@@ -237,14 +234,3 @@ export class DiscordChannel implements Channel {
     }
   }
 }
-
-registerChannel('discord', (opts: ChannelOpts) => {
-  const envVars = readEnvFile(['DISCORD_BOT_TOKEN']);
-  const token =
-    process.env.DISCORD_BOT_TOKEN || envVars.DISCORD_BOT_TOKEN || '';
-  if (!token) {
-    logger.warn('Discord: DISCORD_BOT_TOKEN not set');
-    return null;
-  }
-  return new DiscordChannel(token, opts);
-});

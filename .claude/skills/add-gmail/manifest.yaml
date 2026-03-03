@@ -6,9 +6,10 @@ adds:
   - src/channels/gmail.ts
   - src/channels/gmail.test.ts
 modifies:
-  - src/channels/index.ts
+  - src/index.ts
   - src/container-runner.ts
   - container/agent-runner/src/index.ts
+  - src/routing.test.ts
 structured:
   npm_dependencies:
     googleapis: "^144.0.0"

@@ -7,7 +7,6 @@ FROM node:22-slim
 RUN apt-get update && apt-get install -y \
     chromium \
     fonts-liberation \
-    fonts-noto-cjk \
     fonts-noto-color-emoji \
     libgbm1 \
     libnss3 \
@@ -49,12 +48,12 @@ COPY agent-runner/ ./
 RUN npm run build
 
 # Create workspace directories
-RUN mkdir -p /workspace/group /workspace/global /workspace/extra /workspace/ipc/messages /workspace/ipc/tasks /workspace/ipc/input
+RUN mkdir -p /workspace/group /workspace/global /workspace/extra /workspace/ipc/messages /workspace/ipc/tasks /workspace/ipc/input /workspace/request
 
 # Create entrypoint script
-# Secrets are passed via stdin JSON — temp file is deleted immediately after Node reads it
-# Follow-up messages arrive via IPC files in /workspace/ipc/input/
-RUN printf '#!/bin/bash\nset -e\ncd /app && npx tsc --outDir /tmp/dist 2>&1 >&2\nln -s /app/node_modules /tmp/dist/node_modules\nchmod -R a-w /tmp/dist\ncat > /tmp/input.json\nnode /tmp/dist/index.js < /tmp/input.json\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+# Input is read from /workspace/request/input.json (written by orchestrator on PVC)
+# Output is written to /workspace/request/output/{seq:04d}.json + DONE.json sentinel
+RUN printf '#!/bin/bash\nset -e\ncd /app && npx tsc --outDir /tmp/dist 2>&1 >&2\nln -s /app/node_modules /tmp/dist/node_modules\nchmod -R a-w /tmp/dist\nnode /tmp/dist/index.js\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Set ownership to node user (non-root) for writable directories
 RUN chown -R node:node /workspace && chmod 777 /home/node
@@ -65,5 +64,5 @@ USER node
 # Set working directory to group workspace
 WORKDIR /workspace/group
 
-# Entry point reads JSON from stdin, outputs JSON to stdout
+# Entry point reads input from /workspace/request/input.json, writes output files
 ENTRYPOINT ["/app/entrypoint.sh"]

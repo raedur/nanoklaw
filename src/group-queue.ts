@@ -1,4 +1,3 @@
-import { ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -20,8 +19,7 @@ interface GroupState {
   isTaskContainer: boolean;
   pendingMessages: boolean;
   pendingTasks: QueuedTask[];
-  process: ChildProcess | null;
-  containerName: string | null;
+  jobName: string | null;
   groupFolder: string | null;
   retryCount: number;
 }
@@ -43,8 +41,7 @@ export class GroupQueue {
         isTaskContainer: false,
         pendingMessages: false,
         pendingTasks: [],
-        process: null,
-        containerName: null,
+        jobName: null,
         groupFolder: null,
         retryCount: 0,
       };
@@ -64,7 +61,7 @@ export class GroupQueue {
 
     if (state.active) {
       state.pendingMessages = true;
-      logger.debug({ groupJid }, 'Container active, message queued');
+      logger.debug({ groupJid }, 'Job active, message queued');
       return;
     }
 
@@ -101,7 +98,7 @@ export class GroupQueue {
       if (state.idleWaiting) {
         this.closeStdin(groupJid);
       }
-      logger.debug({ groupJid, taskId }, 'Container active, task queued');
+      logger.debug({ groupJid, taskId }, 'Job active, task queued');
       return;
     }
 
@@ -123,21 +120,19 @@ export class GroupQueue {
     );
   }
 
-  registerProcess(
+  registerJob(
     groupJid: string,
-    proc: ChildProcess,
-    containerName: string,
+    jobName: string,
     groupFolder?: string,
   ): void {
     const state = this.getGroup(groupJid);
-    state.process = proc;
-    state.containerName = containerName;
+    state.jobName = jobName;
     if (groupFolder) state.groupFolder = groupFolder;
   }
 
   /**
-   * Mark the container as idle-waiting (finished work, waiting for IPC input).
-   * If tasks are pending, preempt the idle container immediately.
+   * Mark the job as idle-waiting (finished work, waiting for IPC input).
+   * If tasks are pending, preempt the idle job immediately.
    */
   notifyIdle(groupJid: string): void {
     const state = this.getGroup(groupJid);
@@ -148,8 +143,8 @@ export class GroupQueue {
   }
 
   /**
-   * Send a follow-up message to the active container via IPC file.
-   * Returns true if the message was written, false if no active container.
+   * Send a follow-up message to the active job via IPC file.
+   * Returns true if the message was written, false if no active job.
    */
   sendMessage(groupJid: string, text: string): boolean {
     const state = this.getGroup(groupJid);
@@ -172,7 +167,7 @@ export class GroupQueue {
   }
 
   /**
-   * Signal the active container to wind down by writing a close sentinel.
+   * Signal the active job to wind down by writing a close sentinel.
    */
   closeStdin(groupJid: string): void {
     const state = this.getGroup(groupJid);
@@ -200,7 +195,7 @@ export class GroupQueue {
 
     logger.debug(
       { groupJid, reason, activeCount: this.activeCount },
-      'Starting container for group',
+      'Starting Job for group',
     );
 
     try {
@@ -217,8 +212,7 @@ export class GroupQueue {
       this.scheduleRetry(groupJid, state);
     } finally {
       state.active = false;
-      state.process = null;
-      state.containerName = null;
+      state.jobName = null;
       state.groupFolder = null;
       this.activeCount--;
       this.drainGroup(groupJid);
@@ -244,8 +238,7 @@ export class GroupQueue {
     } finally {
       state.active = false;
       state.isTaskContainer = false;
-      state.process = null;
-      state.containerName = null;
+      state.jobName = null;
       state.groupFolder = null;
       this.activeCount--;
       this.drainGroup(groupJid);
@@ -339,19 +332,18 @@ export class GroupQueue {
   async shutdown(_gracePeriodMs: number): Promise<void> {
     this.shuttingDown = true;
 
-    // Count active containers but don't kill them — they'll finish on their own
-    // via idle timeout or container timeout. The --rm flag cleans them up on exit.
-    // This prevents WhatsApp reconnection restarts from killing working agents.
-    const activeContainers: string[] = [];
-    for (const [jid, state] of this.groups) {
-      if (state.process && !state.process.killed && state.containerName) {
-        activeContainers.push(state.containerName);
+    // K8s Jobs run to completion independently — we don't kill them on shutdown.
+    // The Job's activeDeadlineSeconds provides the hard upper bound.
+    const activeJobs: string[] = [];
+    for (const [, state] of this.groups) {
+      if (state.active && state.jobName) {
+        activeJobs.push(state.jobName);
       }
     }
 
     logger.info(
-      { activeCount: this.activeCount, detachedContainers: activeContainers },
-      'GroupQueue shutting down (containers detached, not killed)',
+      { activeCount: this.activeCount, detachedJobs: activeJobs },
+      'GroupQueue shutting down (K8s Jobs detached, not deleted)',
     );
   }
 }

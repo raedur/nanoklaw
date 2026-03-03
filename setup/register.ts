@@ -1,8 +1,8 @@
 /**
  * Step: register — Write channel registration config, create group folders.
+ * Replaces 06-register-channel.sh
  *
- * Accepts --channel to specify the messaging platform (whatsapp, telegram, slack, discord).
- * Uses parameterized SQL queries to prevent injection.
+ * Fixes: SQL injection (parameterized queries), sed -i '' (uses fs directly).
  */
 import fs from 'fs';
 import path from 'path';
@@ -19,9 +19,7 @@ interface RegisterArgs {
   name: string;
   trigger: string;
   folder: string;
-  channel: string;
   requiresTrigger: boolean;
-  isMain: boolean;
   assistantName: string;
 }
 
@@ -31,9 +29,7 @@ function parseArgs(args: string[]): RegisterArgs {
     name: '',
     trigger: '',
     folder: '',
-    channel: 'whatsapp', // backward-compat: pre-refactor installs omit --channel
     requiresTrigger: true,
-    isMain: false,
     assistantName: 'Andy',
   };
 
@@ -51,14 +47,8 @@ function parseArgs(args: string[]): RegisterArgs {
       case '--folder':
         result.folder = args[++i] || '';
         break;
-      case '--channel':
-        result.channel = (args[++i] || '').toLowerCase();
-        break;
       case '--no-trigger-required':
         result.requiresTrigger = false;
-        break;
-      case '--is-main':
-        result.isMain = true;
         break;
       case '--assistant-name':
         result.assistantName = args[++i] || 'Andy';
@@ -93,10 +83,8 @@ export async function run(args: string[]): Promise<void> {
 
   logger.info(parsed, 'Registering channel');
 
-  // Ensure data and store directories exist (store/ may not exist on
-  // fresh installs that skip WhatsApp auth, which normally creates it)
+  // Ensure data directory exists
   fs.mkdirSync(path.join(projectRoot, 'data'), { recursive: true });
-  fs.mkdirSync(STORE_DIR, { recursive: true });
 
   // Write to SQLite using parameterized queries (no SQL injection)
   const dbPath = path.join(STORE_DIR, 'messages.db');
@@ -112,16 +100,13 @@ export async function run(args: string[]): Promise<void> {
     trigger_pattern TEXT NOT NULL,
     added_at TEXT NOT NULL,
     container_config TEXT,
-    requires_trigger INTEGER DEFAULT 1,
-    is_main INTEGER DEFAULT 0
+    requires_trigger INTEGER DEFAULT 1
   )`);
-
-  const isMainInt = parsed.isMain ? 1 : 0;
 
   db.prepare(
     `INSERT OR REPLACE INTO registered_groups
-     (jid, name, folder, trigger_pattern, added_at, container_config, requires_trigger, is_main)
-     VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
+     (jid, name, folder, trigger_pattern, added_at, container_config, requires_trigger)
+     VALUES (?, ?, ?, ?, ?, NULL, ?)`,
   ).run(
     parsed.jid,
     parsed.name,
@@ -129,7 +114,6 @@ export async function run(args: string[]): Promise<void> {
     parsed.trigger,
     timestamp,
     requiresTriggerInt,
-    isMainInt,
   );
 
   db.close();
@@ -150,7 +134,7 @@ export async function run(args: string[]): Promise<void> {
 
     const mdFiles = [
       path.join(projectRoot, 'groups', 'global', 'CLAUDE.md'),
-      path.join(projectRoot, 'groups', parsed.folder, 'CLAUDE.md'),
+      path.join(projectRoot, 'groups', 'main', 'CLAUDE.md'),
     ];
 
     for (const mdFile of mdFiles) {
@@ -190,7 +174,6 @@ export async function run(args: string[]): Promise<void> {
     JID: parsed.jid,
     NAME: parsed.name,
     FOLDER: parsed.folder,
-    CHANNEL: parsed.channel,
     TRIGGER: parsed.trigger,
     REQUIRES_TRIGGER: parsed.requiresTrigger,
     ASSISTANT_NAME: parsed.assistantName,

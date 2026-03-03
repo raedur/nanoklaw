@@ -12,6 +12,10 @@ Read `.nanoclaw/state.yaml`. If `discord` is in `applied_skills`, skip to Phase 
 
 Use `AskUserQuestion` to collect configuration:
 
+AskUserQuestion: Should Discord replace WhatsApp or run alongside it?
+- **Replace WhatsApp** - Discord will be the only channel (sets DISCORD_ONLY=true)
+- **Alongside** - Both Discord and WhatsApp channels active
+
 AskUserQuestion: Do you have a Discord bot token, or do you need to create one?
 
 If they have one, collect it now. If not, we'll create one in Phase 3.
@@ -37,14 +41,18 @@ npx tsx scripts/apply-skill.ts .claude/skills/add-discord
 ```
 
 This deterministically:
-- Adds `src/channels/discord.ts` (DiscordChannel class with self-registration via `registerChannel`)
+- Adds `src/channels/discord.ts` (DiscordChannel class implementing Channel interface)
 - Adds `src/channels/discord.test.ts` (unit tests with discord.js mock)
-- Appends `import './discord.js'` to the channel barrel file `src/channels/index.ts`
+- Three-way merges Discord support into `src/index.ts` (multi-channel support, findChannel routing)
+- Three-way merges Discord config into `src/config.ts` (DISCORD_BOT_TOKEN, DISCORD_ONLY exports)
+- Three-way merges updated routing tests into `src/routing.test.ts`
 - Installs the `discord.js` npm dependency
+- Updates `.env.example` with `DISCORD_BOT_TOKEN` and `DISCORD_ONLY`
 - Records the application in `.nanoclaw/state.yaml`
 
-If the apply reports merge conflicts, read the intent file:
-- `modify/src/channels/index.ts.intent.md` — what changed and invariants
+If the apply reports merge conflicts, read the intent files:
+- `modify/src/index.ts.intent.md` — what changed and invariants for index.ts
+- `modify/src/config.ts.intent.md` — what changed for config.ts
 
 ### Validate code changes
 
@@ -85,12 +93,16 @@ Add to `.env`:
 DISCORD_BOT_TOKEN=<their-token>
 ```
 
-Channels auto-enable when their credentials are present — no extra configuration needed.
+If they chose to replace WhatsApp:
+
+```bash
+DISCORD_ONLY=true
+```
 
 Sync to container environment:
 
 ```bash
-mkdir -p data/env && cp .env data/env/env
+cp .env data/env/env
 ```
 
 The container reads environment from `data/env/env`, not `.env` directly.
@@ -122,16 +134,15 @@ Wait for the user to provide the channel ID (format: `dc:1234567890123456`).
 
 Use the IPC register flow or register directly. The channel ID, name, and folder name are needed.
 
-For a main channel (responds to all messages):
+For a main channel (responds to all messages, uses the `main` folder):
 
 ```typescript
 registerGroup("dc:<channel-id>", {
   name: "<server-name> #<channel-name>",
-  folder: "discord_main",
+  folder: "main",
   trigger: `@${ASSISTANT_NAME}`,
   added_at: new Date().toISOString(),
   requiresTrigger: false,
-  isMain: true,
 });
 ```
 
@@ -140,7 +151,7 @@ For additional channels (trigger-only):
 ```typescript
 registerGroup("dc:<channel-id>", {
   name: "<server-name> #<channel-name>",
-  folder: "discord_<channel-name>",
+  folder: "<folder-name>",
   trigger: `@${ASSISTANT_NAME}`,
   added_at: new Date().toISOString(),
   requiresTrigger: true,

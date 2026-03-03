@@ -5,10 +5,9 @@ import os from 'os';
 import path from 'path';
 
 import { clearBackup, createBackup, restoreBackup } from './backup.js';
-import { NANOCLAW_DIR, STATE_FILE } from './constants.js';
+import { NANOCLAW_DIR } from './constants.js';
 import { copyDir } from './fs-utils.js';
 import { isCustomizeActive } from './customize.js';
-import { initNanoclawDir } from './init.js';
 import { executeFileOps } from './file-ops.js';
 import { acquireLock } from './lock.js';
 import {
@@ -39,12 +38,7 @@ export async function applySkill(skillDir: string): Promise<ApplyResult> {
   const manifest = readManifest(skillDir);
 
   // --- Pre-flight checks ---
-  // Auto-initialize skills system if state file doesn't exist
-  const statePath = path.join(projectRoot, NANOCLAW_DIR, STATE_FILE);
-  if (!fs.existsSync(statePath)) {
-    initNanoclawDir();
-  }
-  const currentState = readState();
+  const currentState = readState(); // Validates state exists and version is compatible
 
   // Check skills system version compatibility
   const sysCheck = checkSystemVersion(manifest);
@@ -307,7 +301,7 @@ export async function applySkill(skillDir: string): Promise<ApplyResult> {
       }
     }
 
-    // Store structured outcomes including the test command
+    // Store structured outcomes including the test command so applyUpdate() can run them
     const outcomes: Record<string, unknown> = manifest.structured
       ? { ...manifest.structured }
       : {};
